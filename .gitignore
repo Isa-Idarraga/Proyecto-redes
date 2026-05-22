@@ -1,0 +1,14 @@
+# Entorno virtual
+venv/
+.venv/
+
+# Datasets crudos (se descargan con wget, ver README)
+ProyectoRedesFinal/goodreads_reviews_young_adult.json
+ProyectoRedesFinal/goodreads_reviews_spoiler_raw.json
+ProyectoRedesFinal/goodreads_books_young_adult.json
+
+# Modelo DistilBERT (> 100 MB, límite de GitHub)
+ProyectoRedesFinal/distilbert_best.pt
+
+# macOS
+.DS_Store
