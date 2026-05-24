@@ -1,6 +1,0 @@
-{
-  "modelo": "BiLSTM Multitarea",
-  "acc_rating": 0.4857,
-  "mae_rating": 0.6716,
-  "f1_spoiler": 0.0
-}

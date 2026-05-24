@@ -1,6 +1,0 @@
-{
-  "modelo": "DistilBERT Fine-tuning",
-  "acc_rating": 0.5489,
-  "mae_rating": 0.6012,
-  "f1_spoiler": 0.0
-}
