@@ -1,0 +1,6 @@
+{
+  "modelo": "MLP + TF-IDF",
+  "acc_rating": 0.457,
+  "mae_rating": 0.7474,
+  "f1_spoiler": 0.078
+}

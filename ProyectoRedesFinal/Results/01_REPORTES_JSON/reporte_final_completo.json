@@ -1,0 +1,104 @@
+{
+  "fecha": "2026-05-24 12:07:58",
+  "dataset": {
+    "test_samples": 15000,
+    "columnas": [
+      "user_id",
+      "book_id",
+      "review_id",
+      "rating",
+      "review_text",
+      "date_added",
+      "date_updated",
+      "read_at",
+      "started_at",
+      "n_votes",
+      "n_comments",
+      "has_spoiler",
+      "emotion_pred",
+      "emotion_score"
+    ]
+  },
+  "tarea_1_rating": {
+    "descripcion": "Predicci\u00f3n de rating (1-5 estrellas)",
+    "modelos": {
+      "BiLSTM Multitarea": {
+        "accuracy": 0.4857,
+        "mae": 0.6716
+      },
+      "DistilBERT Fine-tuning": {
+        "accuracy": 0.5489,
+        "mae": 0.6012
+      },
+      "MLP + TF-IDF": {
+        "accuracy": 0.457,
+        "mae": 0.7474
+      }
+    }
+  },
+  "tarea_2_spoiler": {
+    "descripcion": "Detecci\u00f3n de spoilers (binario)",
+    "modelos": {
+      "BiLSTM Multitarea": {
+        "f1_score": 0.0
+      },
+      "DistilBERT Fine-tuning": {
+        "f1_score": 0.0
+      },
+      "MLP + TF-IDF": {
+        "f1_score": 0.078
+      }
+    }
+  },
+  "tarea_3_emociones": {
+    "descripcion": "Clasificaci\u00f3n de 6 emociones",
+    "modelo_usado": "j-hartmann/emotion-english-distilroberta-base",
+    "emociones_detectadas": {
+      "neutral": 3818,
+      "joy": 3791,
+      "sadness": 2079,
+      "surprise": 1818,
+      "disgust": 1808,
+      "fear": 954,
+      "anger": 732
+    },
+    "confianza_promedio": 0.69691636,
+    "distribucion": {
+      "joy": {
+        "count": 3791,
+        "porcentaje": 25.27333333333333,
+        "confianza_promedio": 0.7830409390662095
+      },
+      "neutral": {
+        "count": 3818,
+        "porcentaje": 25.453333333333333,
+        "confianza_promedio": 0.6284768727082242
+      },
+      "surprise": {
+        "count": 1818,
+        "porcentaje": 12.120000000000001,
+        "confianza_promedio": 0.7133437843784378
+      },
+      "disgust": {
+        "count": 1808,
+        "porcentaje": 12.053333333333335,
+        "confianza_promedio": 0.6547106194690266
+      },
+      "fear": {
+        "count": 954,
+        "porcentaje": 6.36,
+        "confianza_promedio": 0.7059022012578615
+      },
+      "anger": {
+        "count": 732,
+        "porcentaje": 4.88,
+        "confianza_promedio": 0.6362010928961749
+      },
+      "sadness": {
+        "count": 2079,
+        "porcentaje": 13.86,
+        "confianza_promedio": 0.705149975949976
+      }
+    }
+  }
+}
