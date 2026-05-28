@@ -1,305 +1,153 @@
 # Goodreads NLP Multitask Learning
 
-**Proyecto Final - Redes Neuronales | EAFIT 2026**
-
-Juan Esteban Alzate Ospina - Isabella Idarraga Botero
-
----
-
-## Tabla de Contenidos
-
-1. [Descripcion del Proyecto](#descripcion-del-proyecto)
-2. [Dataset](#dataset)
-3. [Arquitecturas Entrenadas](#arquitecturas-entrenadas)
-4. [Resultados Consolidados](#resultados-consolidados)
-5. [Hallazgos Principales](#hallazgos-principales)
-6. [Correlaciones Entre Tareas](#correlaciones-entre-tareas)
-7. [Estructura del Proyecto](#estructura-del-proyecto)
-8. [Instrucciones de Ejecucion](#instrucciones-de-ejecucion)
-9. [Uso de Inteligencia Artificial](#uso-de-inteligencia-artificial)
-10. [Conclusiones](#conclusiones)
+**Proyecto Final — Redes Neuronales | EAFIT 2026**  
+Juan Esteban Alzate Ospina · Isabella Idarraga Botero
 
 ---
 
-## Descripcion del Proyecto
+## Descripción del Proyecto
 
-Este proyecto implementa un sistema multitarea de NLP para el analisis de resenas de libros extraidas de Goodreads. Combina tres tareas complementarias entrenadas de forma conjunta:
+Sistema multitarea de NLP para el análisis de reseñas de libros extraídas de Goodreads (género Young Adult). Combina tres tareas sobre el mismo corpus:
 
-- **Tarea 1**: Prediccion de Rating (escala 1-5 estrellas)
-- **Tarea 2**: Deteccion de Spoilers (clasificacion binaria)
-- **Tarea 3**: Clasificacion de Emociones (6 clases: joy, sadness, anger, surprise, fear, disgust)
+| # | Tarea | Tipo | Output |
+|---|-------|------|--------|
+| 1 | Predicción de rating | Clasificación multiclase | 1–5 estrellas |
+| 2 | Detección de spoilers | Clasificación binaria | sí / no |
+| 3 | Clasificación de emociones | Inferencia con modelo pre-entrenado | joy, sadness, anger, surprise, fear, disgust, neutral |
 
-El enfoque multitarea permite que las representaciones aprendidas en una tarea beneficien a las demas, reduciendo overfitting y mejorando la generalizacion del modelo.
+Las tareas 1 y 2 se entrenan de forma conjunta (multitarea) en los tres modelos. La tarea 3 se resuelve con inferencia directa del modelo pre-entrenado `j-hartmann/emotion-english-distilroberta-base` sobre el test set — no requiere entrenamiento adicional.
 
 ---
 
 ## Dataset
 
-### Fuente
+**Fuente:** [Goodreads Book Graph Dataset — UCSD](https://cseweb.ucsd.edu/~jmcauley/datasets/goodreads.html)  
+Recopilado por Mengting Wan y Julian McAuley (RecSys'18, ACL'19).
 
-Goodreads Book Graph Dataset — UCSD. Dataset academico recopilado por Mengting Wan y Julian McAuley (RecSys'18, ACL'19).
+| Subset | Libros | Reseñas totales | Uso |
+|--------|--------|-----------------|-----|
+| Young Adult | 93,398 | 2,389,900 | Tareas 1 y 3 (rating + emoción) |
+| Spoiler dataset | ~25,000 | ~1,300,000 | Tarea 2 (spoiler), cruzado con YA por `review_id` |
 
-### Subsets utilizados
-
-| Subset          | Libros  | Resenas totales | Uso                                           |
-| --------------- | ------- | --------------- | --------------------------------------------- |
-| Young Adult     | 93,398  | 2,389,900       | Tareas 1 y 3 (rating + emocion)               |
-| Spoiler dataset | ~25,000 | ~1,300,000      | Tarea 2 (spoiler), cruzado con YA por book_id |
-
-### Campos relevantes
-
-- `review_text` — texto completo de la resena (input principal)
-- `rating` — calificacion 1-5 (label Tarea 1)
-- `has_spoiler` — booleano (label Tarea 2)
-- `book_id` — para cruzar datasets
-- `user_id` — anonimizado
+**Campos relevantes:**
+- `review_text` — texto completo de la reseña (input principal)
+- `rating` — calificación 1–5 (label Tarea 1)
+- `has_spoiler` — booleano extraído de etiquetas en el texto (label Tarea 2)
+- `book_id` / `review_id` — para cruzar datasets
 
 ### Estrategia de muestreo
 
-El dataset completo (~2.4M resenas YA) es inviable computacionalmente para este proyecto. Se aplica muestreo estratificado por clase para mantener representacion balanceada:
+| Modelo | Muestra | Justificación |
+|--------|---------|---------------|
+| MLP baseline | 100,000 reseñas | TF-IDF + MLP satura rápido; más datos no mejora |
+| Bi-LSTM | 100,000 reseñas | Misma muestra que baseline para comparación justa |
+| DistilBERT | 50,000 reseñas | Pre-entrenado; fine-tuning requiere pocas muestras |
 
-| Modelo       | Muestra         | Justificacion                                             |
-| ------------ | --------------- | --------------------------------------------------------- |
-| MLP baseline | 100,000 resenas | TF-IDF + MLP satura rapido; mas datos no mejora el modelo |
-| Bi-LSTM      | 100,000 resenas | Misma muestra que baseline para comparacion justa         |
-| DistilBERT   | 50,000 resenas  | Pre-entrenado; fine-tuning requiere pocas muestras        |
-
-La literatura de fine-tuning de BERT muestra que con 10k-50k ejemplos se alcanza rendimiento muy cercano al maximo. Los tres modelos se comparan sobre el mismo subset.
+Split estratificado por rating: **70% train · 15% val · 15% test**
 
 ### Descarga de datos
 
 ```bash
-# Resenas Young Adult
 wget https://mcauleylab.ucsd.edu/public_datasets/gdrive/goodreads/byGenre/goodreads_reviews_young_adult.json.gz
-
-# Dataset de spoilers
 wget https://mcauleylab.ucsd.edu/public_datasets/gdrive/goodreads/goodreads_reviews_spoiler_raw.json.gz
-
-# Metadatos de libros Young Adult
 wget https://mcauleylab.ucsd.edu/public_datasets/gdrive/goodreads/byGenre/goodreads_books_young_adult.json.gz
 ```
 
-**Por que descarga directa y no API**: Goodreads cerro su API publica en 2020 y desde entonces no otorga acceso a desarrolladores externos. No existe forma oficial de consultar resenas, ratings ni metadatos de libros mediante endpoints programaticos. El scraping directo de goodreads.com tampoco es viable a esta escala y viola sus terminos de servicio. Por esto se utiliza el dataset estatico recopilado por investigadores de UCSD en 2017, que es la fuente academica mas completa y citable disponible publicamente.
-
-**Desbalance de clases (Spoilers)**: el 80% de las resenas no contiene spoilers y el 20% si los contiene. Este desbalance fue tratado mediante weighted cross-entropy loss.
+> Goodreads cerró su API pública en 2020. Se utiliza el dataset estático de UCSD (2017), la fuente académica más completa disponible públicamente.
 
 ---
 
-## Arquitecturas Entrenadas
+## Arquitecturas
 
-Se entrenaron tres arquitecturas de complejidad creciente, desde un baseline simple hasta un modelo transformer de estado del arte.
+Los tres modelos tienen cabezas de salida para **Tarea 1 (rating)** y **Tarea 2 (spoiler)**. La Tarea 3 (emoción) es independiente y se resuelve con el modelo pre-entrenado en el notebook 06.
 
 ### 1. MLP + TF-IDF (Baseline)
 
-Representacion del texto mediante TF-IDF vectorizado a 5,000 dimensiones, seguido de capas densas compartidas y cabezas de salida independientes por tarea.
-
 ```
-Input: Review Text
-       |
-TF-IDF Vectorization (5,000 dims)
-       |
-Dense(512, ReLU) + Dropout(0.3)
-       |
-Dense(256, ReLU) + Dropout(0.3)
-       |
-   ----+----+----------+
-   |        |          |
-Rating   Spoiler   Emotion
-Softmax  Sigmoid   Softmax
-  (5)      (1)       (6)
+TF-IDF (20,000 tokens)
+    → Dense(256) + ReLU + Dropout(0.3)
+    → Dense(128) + ReLU + Dropout(0.3)
+    → [Rating]   Dense(5)  + Softmax
+    → [Spoiler]  Dense(1)  + Sigmoid
 ```
 
-- Parametros: 3.2M
-- Tiempo de entrenamiento: 120 min
-
----
+Loss total: `0.7 · CrossEntropy(rating) + 0.3 · BCEWithLogits(spoiler)`
 
 ### 2. BiLSTM Multitarea
 
-Embeddings GloVe de 300 dimensiones procesados por una capa BiLSTM bidireccional con pooling global, seguida de cabezas de salida por tarea.
-
 ```
-Input: Review Tokens
-       |
-Embedding Layer (GloVe, 300 dims)
-       |
-BiLSTM(256) [Forward + Backward] + Dropout(0.3)
-       |
-Global Average Pooling
-       |
-   ----+----+----------+
-   |        |          |
-Rating   Spoiler   Emotion
-Softmax  Sigmoid   Softmax
-  (5)      (1)       (6)
+Embedding entrenable (20,000 × 128d)
+    → BiLSTM(128 unidades) + Dropout(0.4)
+    → BiLSTM(64 unidades)
+    → último estado oculto
+    → [Rating]   Dense(64) + ReLU → Dense(5)  + Softmax
+    → [Spoiler]  Dense(32) + ReLU → Dense(1)  + Sigmoid
 ```
 
-- Parametros: 2.8M
-- Tiempo de entrenamiento: 60 min
+Loss total: `0.7 · CrossEntropy(rating) + 0.3 · BCEWithLogits(spoiler)`  
+Early stopping (patience=3), gradient clipping (max_norm=1.0)
 
----
-
-### 3. DistilBERT (Estado del Arte)
-
-Fine-tuning del modelo preentrenado `distilbert-base-uncased` con cabezas de clasificacion independientes para cada tarea. Es el modelo con mejor rendimiento en todas las metricas.
+### 3. DistilBERT Fine-tuning
 
 ```
-Input: Review Text
-       |
-DistilBERT Tokenizer & Encoding
-       |
-DistilBERT Transformer Stack
-[6 capas, 768 hidden dims, 12 attention heads]
-       |
-Classification Heads (fine-tuned)
-       |
-   ----+----+----------+
-   |        |          |
-Rating   Spoiler   Emotion
-Softmax  Sigmoid   Softmax
-  (5)      (1)       (6)
+distilbert-base-uncased (66M parámetros, pre-entrenado Wikipedia + BookCorpus)
+    → token [CLS] (768 dim) + Dropout(0.1)
+    → [Rating]   Linear(768→256) + ReLU → Linear(256→5)
+    → [Spoiler]  Linear(768→64)  + ReLU → Linear(64→1)
 ```
 
-- Parametros: 67.4M
-- Tiempo de entrenamiento: 30 min (con GPU)
+Fase 1 — Feature extraction: pesos de DistilBERT congelados, solo cabezas (3 épocas, lr=1e-3)  
+Fase 2 — Fine-tuning: últimas 2 capas descongeladas (5 épocas, lr=2e-5)  
+Max tokens: 128
+
+### Hiperparámetros de entrenamiento
+
+| Parámetro | MLP | BiLSTM | DistilBERT |
+|-----------|-----|--------|------------|
+| Batch size | 256 | 64 | 32 |
+| Épocas | 10 | 10 (ES=3) | 3 + 5 (2 fases) |
+| Optimizer | Adam lr=1e-3 | Adam lr=1e-3 | Adam lr=2e-5 |
+| Regularización | Dropout 0.3 | Dropout 0.4 + grad clip | Dropout 0.1 |
+| Hardware | Apple MPS | Apple MPS | Apple MPS |
 
 ---
 
-## Resultados Consolidados
+## Resultados
 
-### Tarea 1: Prediccion de Rating (1-5 Estrellas)
+### Tareas 1 y 2 — Rating y Spoiler
 
-| Modelo               | Accuracy         | MAE             | RMSE            |
-| -------------------- | ---------------- | --------------- | --------------- |
-| MLP                  | 62.45%           | 0.893           | 1.124           |
-| BiLSTM               | 71.56%           | 0.782           | 0.956           |
-| **DistilBERT** | **82.34%** | **0.654** | **0.823** |
+| Modelo | Acc Rating | MAE Rating | F1 Spoiler |
+|--------|------------|------------|------------|
+| MLP + TF-IDF | 45.7% | 0.747 | 0.078 |
+| BiLSTM Multitarea | 48.6% | 0.672 | 0.000 |
+| **DistilBERT** | **54.9%** | **0.601** | 0.000 |
 
-Ganador: DistilBERT (+31.8% vs Baseline)
+> **Spoiler F1 = 0 en BiLSTM y DistilBERT:** el dataset cruzado YA × spoilers resultó con un desbalance del 94.1% (sin spoiler) vs 5.9% (con spoiler). Ambos modelos colapsaron a predecir siempre la clase mayoritaria. El MLP capturó parcialmente la clase minoritaria (F1=0.078).
 
----
+### Tarea 3 — Clasificación de emociones
 
-### Tarea 2: Deteccion de Spoilers (Binario)
+Inferencia con `j-hartmann/emotion-english-distilroberta-base` sobre 15,000 reseñas del test set.  
+Confianza promedio: **69.7%**
 
-| Modelo               | F1-Score         | Precision        | Recall           | AUC             |
-| -------------------- | ---------------- | ---------------- | ---------------- | --------------- |
-| MLP                  | 54.32%           | 52.10%           | 56.78%           | 0.612           |
-| BiLSTM               | 67.89%           | 65.23%           | 70.45%           | 0.745           |
-| **DistilBERT** | **76.21%** | **74.56%** | **77.89%** | **0.823** |
-
-Ganador: DistilBERT (+40.2% vs Baseline)
-
----
-
-### Tarea 3: Clasificacion de Emociones (6 Clases)
-
-Modelo utilizado: `j-hartmann/emotion-english-distilroberta-base` (preentrenado, sin fine-tuning adicional)
-
-| Emocion  | Precision | Recall | F1-Score | Confianza Promedio |
-| -------- | --------- | ------ | -------- | ------------------ |
-| Joy      | 89.2%     | 87.5%  | 88.3%    | 0.846              |
-| Sadness  | 84.1%     | 82.3%  | 83.1%    | 0.823              |
-| Surprise | 81.5%     | 79.8%  | 80.6%    | 0.812              |
-| Anger    | 78.9%     | 76.5%  | 77.6%    | 0.804              |
-| Fear     | 75.2%     | 72.1%  | 73.5%    | 0.796              |
-| Disgust  | 72.1%     | 68.9%  | 70.4%    | 0.783              |
-
-Accuracy global: 82.47% | Confianza promedio: 82.47%
+| Emoción | Reseñas | % | Confianza promedio |
+|---------|---------|---|--------------------|
+| Neutral | 3,818 | 25.5% | 62.8% |
+| Joy | 3,791 | 25.3% | 78.3% |
+| Sadness | 2,079 | 13.9% | 70.5% |
+| Surprise | 1,818 | 12.1% | 71.3% |
+| Disgust | 1,808 | 12.1% | 65.5% |
+| Fear | 954 | 6.4% | 70.6% |
+| Anger | 732 | 4.9% | 63.6% |
 
 ---
 
-### Resumen de Mejoras (Baseline vs DistilBERT)
+## Correlaciones entre Tareas
 
-| Metrica                 | MLP (Baseline) | DistilBERT | Mejora      |
-| ----------------------- | -------------- | ---------- | ----------- |
-| Rating Accuracy         | 62.45%         | 82.34%     | +31.8%      |
-| Spoiler F1-Score        | 54.32%         | 76.21%     | +40.2%      |
-| Emotion Accuracy        | N/A            | 82.47%     | Nueva tarea |
-| Tiempo de entrenamiento | 120 min        | 30 min     | -75%        |
+El notebook `06_emotion_classification.ipynb` calcula y visualiza las relaciones entre las tres tareas sobre el test set (ver `Results/02_VISUALIZACIONES/`):
 
----
-
-## Hallazgos Principales
-
-### Hallazgo 1: Emociones positivas predicen ratings altos
-
-Las resenas con emociones positivas correlacionan fuertemente con ratings elevados:
-
-| Emocion  | Rating Promedio |
-| -------- | --------------- |
-| Joy      | 4.2             |
-| Surprise | 3.8             |
-| Sadness  | 3.1             |
-| Anger    | 1.9             |
-| Fear     | 1.6             |
-| Disgust  | 1.4             |
-
-El sentimiento emocional es un predictor confiable del rating que otorgara el lector.
-
----
-
-### Hallazgo 2: La sorpresa es la emocion mas asociada con spoilers
-
-| Emocion  | % de resenas con Spoiler |
-| -------- | ------------------------ |
-| Surprise | 34.2%                    |
-| Sadness  | 28.5%                    |
-| Anger    | 22.1%                    |
-| Joy      | 18.7%                    |
-| Fear     | 15.3%                    |
-| Disgust  | 12.1%                    |
-
-Las resenas que transmiten sorpresa contienen spoilers con mayor frecuencia, lo que sugiere que los lectores suelen revelar giros inesperados de la trama. Esta correlacion puede usarse como senal auxiliar en la deteccion de spoilers.
-
----
-
-### Hallazgo 3: DistilBERT supera significativamente a los modelos tradicionales
-
-Los transformers capturan relaciones semanticas que TF-IDF y BiLSTM no logran modelar con la misma eficacia. El preentrenamiento en corpus masivos permite una transferencia de conocimiento altamente efectiva, resultando en +31.8% de accuracy en rating y +40.2% en F1-Score de spoilers respecto al baseline.
-
----
-
-### Hallazgo 4: El desbalance de clases afecta criticamente la deteccion de spoilers
-
-Con el 80% de las resenas sin spoiler, los modelos tendian a ignorar la clase minoritaria. El uso de weighted cross-entropy loss mejoro el F1-Score de spoilers de 54% a 76%.
-
----
-
-### Hallazgo 5: Distribucion emocional del corpus
-
-Las resenas de Young Adult expresan predominantemente emociones positivas, consistente con el genero literario:
-
-| Emocion  | Frecuencia |
-| -------- | ---------- |
-| Joy      | 30.0%      |
-| Sadness  | 18.0%      |
-| Surprise | 14.0%      |
-| Anger    | 12.0%      |
-| Fear     | 6.0%       |
-| Disgust  | 5.0%       |
-
----
-
-## Correlaciones Entre Tareas
-
-### Rating vs Emocion
-
-- Joy: rating promedio 4.2 (libros que evocan alegria reciben ratings altos)
-- Sadness: rating promedio 3.1 (narrativas emocionales reciben ratings mixtos)
-- Anger: rating promedio 1.9 (la frustracion del lector se traduce en ratings bajos)
-
-### Spoiler vs Emocion
-
-- Surprise: correlacion 0.78 (muy fuerte). El 34.2% de las resenas con sorpresa contienen spoilers; los giros de trama generan sorpresa y tienden a revelarse.
-- Sadness: correlacion 0.65 (fuerte). El 28.5% de las resenas con tristeza contienen spoilers; muertes y traumas narrativos suelen revelarse.
-- Anger: correlacion 0.52 (moderada). El 22.1% de las resenas con enojo contienen spoilers.
-
-### Rating vs Spoiler
-
-- Ratings altos (4-5 estrellas): 15% contienen spoilers.
-- Ratings bajos (1-2 estrellas): 25% contienen spoilers.
-
-Los lectores insatisfechos son mas propensos a revelar el contenido de la trama.
+- **Rating vs Emoción:** emociones positivas (joy, surprise) se asocian a ratings altos; negativas (anger, disgust) a ratings bajos.
+- **Spoiler vs Emoción:** surprise es la emoción con mayor porcentaje de reseñas con spoiler — los giros de trama tienden a revelarse.
+- **Rating vs Spoiler:** las reseñas con ratings bajos (1–2 estrellas) tienen mayor proporción de spoilers que las de ratings altos.
 
 ---
 
@@ -307,158 +155,102 @@ Los lectores insatisfechos son mas propensos a revelar el contenido de la trama.
 
 ```
 ProyectoRedesFinal/
-|
-+-- Data/
-|   +-- raw/
-|   |   +-- goodreads_reviews_young_adult.json  (100k resenas)
-|   |   +-- goodreads_books_young_adult.json
-|   |   +-- INSTRUCCIONES.md
-|   +-- processed/
-|       +-- train.csv                           (70k muestras)
-|       +-- val.csv                             (15k muestras)
-|       +-- test.csv                            (15k muestras)
-|       +-- test_with_emotions.csv              (predicciones de emocion)
-|
-+-- Models/
-|   +-- mlp_model.pt                            (TF-IDF + MLP)
-|   +-- bilstm_best.pt                          (BiLSTM Multitarea)
-|   +-- [DistilBERT cargado desde HuggingFace]
-|
-+-- Notebooks/
-|   +-- 00_pipeline_completo.ipynb              (ejecutable end-to-end)
-|   +-- 01_eda.ipynb                            (analisis exploratorio)
-|   +-- 02_preprocessing.ipynb                 (limpieza de datos)
-|   +-- 03_baseline_mlp.ipynb                  (entrenamiento MLP)
-|   +-- 04_bilstm.ipynb                        (entrenamiento BiLSTM)
-|   +-- 05_distilbert.ipynb                    (entrenamiento DistilBERT)
-|   +-- 06_emotion_classification.ipynb        (analisis de emociones y consolidacion)
-|
-+-- Results/
-|   +-- 01_REPORTES_JSON/
-|   |   +-- reporte_final_completo.json
-|   |   +-- resultados_mlp.json
-|   |   +-- resultados_bilstm.json
-|   |   +-- resultados_distilbert.json
-|   |
-|   +-- 02_VISUALIZACIONES/
-|   |   +-- eda_plots.png                      (distribuciones del dataset)
-|   |   +-- mlp_curves.png                     (curvas de perdida MLP)
-|   |   +-- bilstm_curves.png                  (curvas de perdida BiLSTM)
-|   |   +-- comparacion_modelos.png            (comparativa 3 modelos)
-|   |   +-- emotion_analysis.png               (distribucion de emociones)
-|   |   +-- correlaciones_3tareas.png          (matriz de correlaciones)
-|   |
-|   +-- 03_REPORTES_PDF/
-|   |   +-- reporte_final.pdf                  (resumen ejecutivo)
-|   |
-|   +-- INDEX.md                               (guia de archivos)
-|
-+-- README.md
+├── Data/
+│   ├── raw/
+│   │   └── INSTRUCCIONES.md
+│   └── processed/
+│       ├── train.csv                  (70,000 muestras)
+│       ├── val.csv                    (15,000 muestras)
+│       ├── test.csv                   (15,000 muestras)
+│       └── test_with_emotions.csv     (test + predicciones de emoción)
+├── Models/
+│   ├── mlp_model.pt
+│   ├── bilstm_best.pt
+│   └── [DistilBERT se carga desde HuggingFace]
+├── Notebooks/
+│   ├── 00_pipeline_completo.ipynb     (pipeline end-to-end ejecutable)
+│   ├── 01_eda.ipynb                   (análisis exploratorio)
+│   ├── 02_preprocessing.ipynb         (limpieza y muestreo)
+│   ├── 03_baseline_mlp.ipynb          (MLP + TF-IDF)
+│   ├── 04_bilstm.ipynb                (BiLSTM multitarea)
+│   ├── 05_distilbert.ipynb            (DistilBERT fine-tuning + reporte PDF)
+│   └── 06_emotion_classification.ipynb (emociones + correlaciones + consolidación)
+└── Results/
+    ├── 01_REPORTES_JSON/
+    │   ├── reporte_final_completo.json
+    │   ├── resultados_mlp.json
+    │   ├── resultados_bilstm.json
+    │   └── resultados_distilbert.json
+    ├── 02_VISUALIZACIONES/
+    │   ├── eda_plots.png
+    │   ├── mlp_curves.png
+    │   ├── bilstm_curves.png
+    │   ├── comparacion_modelos.png
+    │   ├── emotion_analysis.png
+    │   └── correlaciones_3tareas.png
+    └── 03_REPORTES_PDF/
+        └── reporte_final.pdf
 ```
 
 ---
 
-## Instrucciones de Ejecucion
+## Instrucciones de Ejecución
 
-### Opcion 1: Pipeline completo (recomendado)
-
-Ejecuta el notebook `00` que orquesta todas las etapas en orden:
+**Opción 1 — Pipeline completo (recomendado)**
 
 ```bash
 jupyter notebook Notebooks/00_pipeline_completo.ipynb
 ```
 
-Tiempo estimado: 2-3 horas con GPU.
+Tiempo estimado: 2–4 horas con GPU.
 
----
-
-### Opcion 2: Ejecucion paso a paso
+**Opción 2 — Paso a paso**
 
 ```bash
-# 1. Analisis exploratorio
 jupyter notebook Notebooks/01_eda.ipynb
-
-# 2. Preprocesamiento
 jupyter notebook Notebooks/02_preprocessing.ipynb
-
-# 3. Entrenamientos individuales
 jupyter notebook Notebooks/03_baseline_mlp.ipynb
 jupyter notebook Notebooks/04_bilstm.ipynb
 jupyter notebook Notebooks/05_distilbert.ipynb
-
-# 4. Analisis de emociones y consolidacion
 jupyter notebook Notebooks/06_emotion_classification.ipynb
 ```
 
 ---
 
-### Opcion 3: Inferencia rapida (solo predicciones)
+## Stack Tecnológico
 
-```python
-from transformers import pipeline
-
-emotion_classifier = pipeline(
-    "text-classification",
-    model="j-hartmann/emotion-english-distilroberta-base"
-)
-
-review = "Este libro fue increible, me encanto cada pagina!"
-emotion = emotion_classifier(review)
-print(f"Emocion detectada: {emotion[0]['label']} (confianza: {emotion[0]['score']:.2%})")
-```
+- Python 3.10+
+- PyTorch — MLP y BiLSTM
+- HuggingFace Transformers — DistilBERT y clasificador de emociones
+- scikit-learn — TF-IDF, métricas
+- pandas / numpy — procesamiento de datos
+- matplotlib / seaborn — visualizaciones
+- reportlab — generación del PDF
 
 ---
 
 ## Uso de Inteligencia Artificial
-
-Este proyecto fue desarrollado con asistencia de **GitHub Copilot** (basado en GPT-4). A continuacion se detalla su rol y contribuciones especificas.
-
-### Contribuciones al rendimiento del modelo
-
-- Optimizacion de arquitecturas: sugirió configuraciones de capas, activaciones y regularizacion que mejoraron la accuracy en aproximadamente 15-20%.
-- Hyperparameter tuning: recomendo tasas de aprendizaje, batch sizes y estrategias de early stopping que redujeron el overfitting.
-- Data augmentation: propuso tecnicas de back-translation y paraphrasing para mejorar la generalizacion.
-- Manejo del desbalance de clases: implemento weighted loss functions que mejoraron el F1-Score de spoilers en +40%.
-
-### Problemas tecnicos resueltos
-
-| Problema                     | Solucion                                              | Resultado        |
-| ---------------------------- | ----------------------------------------------------- | ---------------- |
-| NameError en variables       | Reestructuracion de celdas con copias de diccionarios | Resuelto         |
-| AttributeError por shadowing | Renombramiento de variables de loop                   | Resuelto         |
-| Desbalance de clases         | Weighted cross-entropy loss + oversampling            | F1 +40%          |
-| Overfitting en BERT          | Dropout, early stopping, ReduceLROnPlateau            | Gap reducido 35% |
-
-### Mejoras de codigo
-
-- Documentacion: agrego docstrings a mas de 100 funciones.
-- Refactoring: modularizo codigo repetitivo en funciones reutilizables.
-- Optimizacion: vectorizo operaciones Pandas, reduciendo tiempo de ejecucion un 70%.
-- Testing: propuso casos de prueba para validar la correctitud del pipeline.
-
-### Decisiones arquitectonicas clave recomendadas por la IA
-
-- DistilBERT sobre BERT completo: 40% mas rapido, con 95% de la accuracy de BERT.
-- Shared embedding layer vs. capas separadas: mejora de +5% en generalizacion multitarea.
-- Emotion classifier preentrenado vs. entrenamiento desde cero: ahorro de ~40 horas de computo con mejor accuracy resultante.
-- Weighted loss para spoilers: mejora de F1-Score de 54% a 76%.
+ 
+Este proyecto fue desarrollado por el equipo con asistencia de **Claude (Anthropic)** como herramienta de apoyo durante el proceso.
+ 
+El equipo fue responsable de diseñar la solución end-to-end: definir las tres tareas, seleccionar y justificar los datasets, plantear las arquitecturas progresivas (MLP → BiLSTM → DistilBERT), implementar y ejecutar todos los notebooks, interpretar los resultados y redactar las conclusiones. Las decisiones técnicas clave — como el uso de aprendizaje multitarea con encoder compartido, el muestreo estratificado, el manejo del desbalance de clases y la estrategia de fine-tuning en dos fases — fueron tomadas y validadas por el equipo.
+ 
+Claude se utilizó como asistente de programación: apoyó en la escritura del código de los notebooks (arquitecturas, loops de entrenamiento, preprocesamiento), depuró errores puntuales (e.g. incompatibilidad de `ReduceLROnPlateau` con la versión de PyTorch, `NameError` por reinicio de kernel), y apoyó en la redacción y estructura de la documentación. Todo el código fue entendido, revisado y ejecutado por el equipo.
 
 ---
 
 ## Conclusiones
 
-1. **Las arquitecturas modernas importan**: DistilBERT supera ampliamente a los modelos tradicionales en todas las metricas.
-2. **El aprendizaje multitarea mejora la generalizacion**: entrenar Rating, Spoiler y Emotion de forma conjunta reduce el overfitting y aprovecha las correlaciones entre tareas.
-3. **El desbalance de clases es critico**: tecnicas como weighted loss son indispensables cuando las clases estan desbalanceadas.
-4. **El preentrenamiento es mas eficiente que entrenar desde cero**: el uso de modelos de HuggingFace redujo el tiempo de desarrollo y mejoro los resultados finales.
-5. **La IA como multiplicador de productividad**: el uso de GitHub Copilot redujo el tiempo de desarrollo estimado en un 60% mejorando la calidad del codigo.
+1. **DistilBERT supera a los modelos tradicionales** en predicción de rating (54.9% vs 45.7% del MLP) con menor tiempo de entrenamiento.
+2. **La detección de spoilers es el desafío principal:** el desbalance real del dataset cruzado (94%/6%) fue más severo de lo estimado, colapsando el F1 a cero en BiLSTM y DistilBERT.
+3. **El clasificador de emociones pre-entrenado funcionó bien** con confianza promedio del 69.7% sin fine-tuning adicional.
+4. **El aprendizaje multitarea es viable** con encoder compartido, aunque el desbalance extremo de spoilers interfiere con el aprendizaje de las demás tareas.
 
 ---
 
-## Atribuciones
+## Referencias
 
-- Proyecto: Goodreads NLP Multitask Learning
-- Institucion: EAFIT - Escuela de Administracion, Finanzas e Ingenieria
-- Asignatura: Redes Neuronales (2026)
-- Asistencia IA: GitHub Copilot
-- Fecha de cierre: 23de mayo de 2026
+- Wan, M., McAuley, J. (2018). *Item Recommendation on Monotonic Behavior Chains*. RecSys.
+- Wan, M. et al. (2019). *Fine-Grained Spoiler Detection from Large-Scale Review Corpora*. ACL.
+- Sanh, V. et al. (2019). *DistilBERT, a distilled version of BERT*. NeurIPS Workshop.
+- Hartmann, J. (2022). *emotion-english-distilroberta-base*. HuggingFace.
