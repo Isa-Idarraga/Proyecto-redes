@@ -239,6 +239,26 @@ Claude se utilizó como asistente de programación: apoyó en la escritura del c
 
 ---
 
+## Dependencias
+ 
+Probado con Python 3.10+. Instalar con:
+ 
+```bash
+pip install torch torchvision transformers datasets scikit-learn pandas numpy matplotlib seaborn reportlab
+```
+ 
+| Librería | Uso |
+|----------|-----|
+| `torch` | MLP y BiLSTM |
+| `transformers` | DistilBERT y clasificador de emociones |
+| `datasets` | Carga de datos HuggingFace |
+| `scikit-learn` | TF-IDF, métricas |
+| `pandas` / `numpy` | Procesamiento de datos |
+| `matplotlib` / `seaborn` | Visualizaciones |
+| `reportlab` | Generación del PDF |
+
+---
+
 ## Conclusiones
 
 1. **DistilBERT supera a los modelos tradicionales** en predicción de rating (54.9% vs 45.7% del MLP) con menor tiempo de entrenamiento.
